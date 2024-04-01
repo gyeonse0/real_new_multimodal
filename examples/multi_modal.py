@@ -43,7 +43,7 @@ drone_k_opt_count=0
 destroy_probabilities = [0.33, 0.34, 0.33]  # 각각의 파괴 연산자에 대한 확률(성능기반의 score가 아니라, 확률만 고려함으로써 더욱 랜덤성 부여)
 repair_probabilities = [0.6, 0.1, 0.3]  # 각각의 수리 연산자에 대한 확률
 init = initial_truck
-iteration_num = 100000
+iteration_num = 10
 
 # 초기 설정
 start_temperature = 100
@@ -157,34 +157,18 @@ for name, count in repair_counts.items():
 print("\nDrone k_opt Counts(#):",drone_k_opt_count)
 
 print("Execution time:", execution_time, "seconds")
-#routes_t, routes_soc = MultiModalState(current_states[min_index]).objective_value_list() #로 route들에 대한 OFV 리스트 n개 생성 input으로 state: MultiModalState(current_states[min_index])
 total_route, routes_soc_truck = MultiModalState(current_states[min_index]).truck_soc()
 total_route, routes_soc_drone = MultiModalState(current_states[min_index]).drone_soc()
 
-# for i, route in enumerate(total_route):
-#     plt.figure(figsize=(8, 6))
-    
-#     # Plot truck data
-#     plt.plot(range(len(route)), routes_soc_truck[i], marker='o', linestyle='-', label='Truck')
-    
-#     # Plot drone data
-#     plt.plot(range(len(route)), routes_soc_drone[i], marker='o', linestyle='-', label='Drone')
-    
-#     plt.title(f"Route {i+1} OFV Graph")
-#     plt.xlabel("Customer")
-#     plt.ylabel("SOC (%)")
-#     plt.grid(True)
-#     plt.legend()  # Add legend to differentiate between truck and drone
-    
-#     # Set x ticks to show all customers
-#     plt.xticks(range(len(route)), route)
-    
-#     plt.show()
-
 total_routes = MultiModalState(current_states[min_index]).routes.routes
+truck_current_kwh = data["battery_kwh_t"]
+drone_current_kwh = data["battery_kwh_d"]
 for i, route in enumerate(total_routes):
     plt.figure(figsize=(8, 6))
+    # TRUCK_PATH
     truck_path = [x if route[idx][1] != ONLY_DRONE else None for idx, x in enumerate(routes_soc_truck[i])]
+    # 특정 조건을 만족하는 값의 인덱스를 필터링
+    excluded_indices_truck = [i for i, value in enumerate(truck_path) if value is None]
     # None 값을 이전 값과 다음 값의 중간 값으로 대체
     for j in range(1, len(truck_path) - 1):
         if truck_path[j] is None:
@@ -209,9 +193,18 @@ for i, route in enumerate(total_routes):
             if left_value is not None and right_value is not None:
                 truck_path[j] = (left_value + right_value) / 2
     # Plot truck data
-    plt.plot(range(len(route)), truck_path , marker='o', linestyle='-', label='Truck')
+    plt.plot(range(len(route)), truck_path , marker='', linestyle='-', label='Truck', color='blue')
+    for iter in range(len(truck_path)):
+        if iter in excluded_indices_truck:
+            plt.plot(iter, truck_path[iter], marker='', linestyle='', color='blue')
+        else:
+            plt.plot(iter, truck_path[iter], marker='.', color='blue')
     
+    
+    # DRONE_PATH
     drone_path = [x if route[idx][1] != ONLY_TRUCK else None for idx, x in enumerate(routes_soc_drone[i])]
+    # 특정 조건을 만족하는 값의 인덱스를 필터링
+    excluded_indices_drone = [i for i, value in enumerate(drone_path) if value is None]
     # None 값을 이전 값과 다음 값의 중간 값으로 대체
     for j in range(1, len(drone_path) - 1):
         if drone_path[j] is None:
@@ -236,7 +229,31 @@ for i, route in enumerate(total_routes):
             if left_value is not None and right_value is not None:
                 drone_path[j] = (left_value + right_value) / 2
     # Plot drone data
-    plt.plot(range(len(route)), drone_path, marker='o', linestyle='-', label='Drone')
+    plt.plot(range(len(route)), drone_path, marker='', linestyle='-', label='Drone', color='red')
+    for iter in range(len(drone_path)):
+        if iter in excluded_indices_drone:
+            plt.plot(iter, drone_path[iter], marker='', linestyle='', color='red')
+        else:
+            plt.plot(iter, drone_path[iter], marker='.', color='red')
+
+    # 코드 설명 함수 - text
+    # 트럭
+    truck_energy_consumption = (truck_path[0] - truck_path[-1]) * truck_current_kwh / 100
+    truck_energy_consumption = round(truck_energy_consumption, 3)  # round() 함수를 사용하여 소수점 세 번째 자리까지 반올림
+    # 드론
+    drone_energy_consumption = 0
+    drone_charged_kwh = 0
+    for d in range(len(drone_path) - 1):
+        if (drone_path[d]-drone_path[d+1]) > 0:
+            drone_energy_consumption += drone_path[d]-drone_path[d+1]
+        elif (drone_path[d]-drone_path[d+1]) < 0:
+            drone_charged_kwh += drone_path[d+1]-drone_path[d]
+    drone_energy_consumption = drone_energy_consumption * drone_current_kwh / 100
+    drone_charged_kwh = drone_charged_kwh * drone_current_kwh / 100
+    # plt.text(0, min(truck_path), f'Truck Energy Consumption: {truck_energy_consumption}kwh', fontsize=12, ha='left', va='bottom')
+    # plt.text(0, min(drone_path), f'Truck Energy Consumption: {round(drone_energy_consumption, 3)}kwh', fontsize=12, ha='center', va='bottom')
+    # plt.text(0, min(drone_path), f'Truck Charging to Drone: {round(drone_charged_kwh, 3)}kwh', fontsize=12, ha='center', va='bottom')
+    plt.text(0, min(drone_path), f'Truck Energy Consumption: {truck_energy_consumption}kwh\nDrone Energy Consumption: {round(drone_energy_consumption, 3)}kwh\nTruck Charging to Drone: {round(drone_charged_kwh, 3)}kwh', fontsize=12, ha='center', va='bottom', bbox=dict(facecolor='lightgray', edgecolor='gray', boxstyle='round'))
     
     plt.title(f"Route {i+1} OFV Graph")
     plt.xlabel("Customer")
